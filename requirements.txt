@@ -2,3 +2,4 @@ google-genai
 pillow
 pymupdf
 python-dotenv
+numpy
