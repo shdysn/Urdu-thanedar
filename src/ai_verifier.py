@@ -37,14 +37,14 @@ Do not skip lines or watermarks. Return ONLY the transcribed text."""
     return (response.text or "").strip()
 
 
-def run_inspector(pil_image, munshi_draft):
-    prompt = f"""You are the Quality Inspector.
-Munshi (Agent 1) has prepared this transcription draft:
+def run_inspector_debate(pil_image, munshi_draft):
+    prompt = f"""You are the Inspector in a multi-agent debate.
+Munshi has submitted this draft:
 ---
 {munshi_draft}
 ---
 
-Inspect the image closely. Identify missed words under watermarks, wrong ligatures, or missing prepositions. Provide a revised and corrected draft."""
+Cross-examine Munshi's draft against the original image. Challenge ambiguous words and dots or ligatures (for example, حبس versus جس or بہترین versus بہتر), check context, and identify missing words under watermarks or missing punctuation. Return short, specific objections and corrections addressed to Munshi and Thanedar. Do not provide a replacement transcript."""
     response = client_inspector.models.generate_content(
         model=MODEL,
         contents=[pil_image, prompt],
@@ -52,21 +52,17 @@ Inspect the image closely. Identify missed words under watermarks, wrong ligatur
     return (response.text or "").strip()
 
 
-def run_thanedar(pil_image, munshi_draft, inspector_draft):
-    prompt = f"""You are the THANEDAR, the final authority on Urdu Nastaliq transcription.
+def run_thanedar_ruling(pil_image, munshi_draft, inspector_objections):
+    prompt = f"""You are the THANEDAR, the final arbiter and judge of this Urdu Nastaliq transcription debate.
 
-Use the original page image as the source of truth. Compare these drafts and resolve any disagreements by inspecting the image:
-Munshi's first draft:
----
+The original page image is the primary source of truth.
+[MUNSHI'S DRAFT]
 {munshi_draft}
----
-Inspector's audited version:
----
-{inspector_draft}
----
+[INSPECTOR'S OBJECTIONS AND CHALLENGES]
+{inspector_objections}
 
-Ensure no words are dropped under watermarks and verify ligatures and nuqtas.
-Output ONLY the final Urdu text between [VERDICT_START] and [VERDICT_END]. No notes or English."""
+Review every objection against the image, settle disputes by inspecting the pixels, and produce the final Urdu text. Ensure words under watermarks, ligatures, and nuqtas are checked.
+Output ONLY the final certified Urdu text between [VERDICT_START] and [VERDICT_END]. No notes or English."""
     response = client_thanedar.models.generate_content(
         model=MODEL,
         contents=[pil_image, prompt],
@@ -80,6 +76,9 @@ Output ONLY the final Urdu text between [VERDICT_START] and [VERDICT_END]. No no
 
 
 def run_multi_agent_pipeline(pil_image):
+    print("Munshi draft bana raha hai...")
     munshi_draft = run_munshi(pil_image)
-    inspector_draft = run_inspector(pil_image, munshi_draft)
-    return run_thanedar(pil_image, munshi_draft, inspector_draft)
+    print("Inspector Munshi ke draft par aitrazat aur behas kar raha hai...")
+    inspector_objections = run_inspector_debate(pil_image, munshi_draft)
+    print("Thanedar behas aur tasveer dekh kar aakhri faisla kar raha hai...")
+    return run_thanedar_ruling(pil_image, munshi_draft, inspector_objections)
