@@ -1,84 +1,103 @@
 import os
-
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 load_dotenv()
 
 raw_keys = os.getenv("GEMINI_API_KEY", "")
 api_keys = []
-for key in raw_keys.replace("\n", ",").replace(";", ",").split(","):
-    cleaned = key.strip().strip("'\"")
+for k in raw_keys.replace("\n", ",").replace(";", ",").split(","):
+    cleaned = k.strip().strip("'\"")
     if "GEMINI_API_KEY=" in cleaned:
         cleaned = cleaned.split("GEMINI_API_KEY=")[-1].strip().strip("'\"")
     if cleaned:
         api_keys.append(cleaned)
 
 if not api_keys:
-    raise ValueError("GEMINI_API_KEY nahi mili! GitHub Secrets check karein.")
+    raise ValueError("GEMINI_API_KEY nahi mili!")
 
 key_munshi = api_keys[0]
 key_inspector = api_keys[1] if len(api_keys) > 1 else api_keys[0]
-key_thanedar = api_keys[2] if len(api_keys) > 2 else key_inspector
+key_thanedar = api_keys[2] if len(api_keys) > 2 else (api_keys[1] if len(api_keys) > 1 else api_keys[0])
 
 client_munshi = genai.Client(api_key=key_munshi)
 client_inspector = genai.Client(api_key=key_inspector)
 client_thanedar = genai.Client(api_key=key_thanedar)
-MODEL = "gemini-3.5-flash-lite"
 
+# Zero Creativity Configuration (Guessed words jaise 'kitchen' ko rokne ke liye)
+strict_config = types.GenerateContentConfig(
+    temperature=0.0
+)
 
+# 1. Munshi
 def run_munshi(pil_image):
-    prompt = """Transcribe all visible Urdu Nastaliq text from this book page image verbatim.
-Do not skip lines or watermarks. Return ONLY the transcribed text."""
+    prompt = """Transcribe all Urdu Nastaliq text verbatim. Output ONLY the raw Urdu text."""
     response = client_munshi.models.generate_content(
-        model=MODEL,
+        model="gemini-3.5-flash-lite",
         contents=[pil_image, prompt],
+        config=strict_config
     )
-    return (response.text or "").strip()
+    return response.text.strip()
 
-
+# 2. Inspector Debate
 def run_inspector_debate(pil_image, munshi_draft):
-    prompt = f"""You are the Inspector in a multi-agent debate.
-Munshi has submitted this draft:
+    prompt = f"""You are the Quality Inspector.
+Munshi's draft:
 ---
 {munshi_draft}
 ---
-
-Cross-examine Munshi's draft against the original image. Challenge ambiguous words and dots or ligatures (for example, حبس versus جس or بہترین versus بہتر), check context, and identify missing words under watermarks or missing punctuation. Return short, specific objections and corrections addressed to Munshi and Thanedar. Do not provide a replacement transcript."""
+TASK:
+Compare against image closely. Challenge any missed letters, substituted words (e.g. confusing 'میس' with 'کچن', or 'حبس' with 'جس'), or dropped prepositions.
+State your objections clearly."""
     response = client_inspector.models.generate_content(
-        model=MODEL,
+        model="gemini-3.5-flash-lite",
         contents=[pil_image, prompt],
+        config=strict_config
     )
-    return (response.text or "").strip()
+    return response.text.strip()
 
-
+# 3. Thanedar Supreme Verdict + Doubt Logger
 def run_thanedar_ruling(pil_image, munshi_draft, inspector_objections):
-    prompt = f"""You are the THANEDAR, the final arbiter and judge of this Urdu Nastaliq transcription debate.
+    prompt = f"""You are the 'THANEDAR' (Supreme Arbiter).
 
-The original page image is the primary source of truth.
-[MUNSHI'S DRAFT]
-{munshi_draft}
-[INSPECTOR'S OBJECTIONS AND CHALLENGES]
-{inspector_objections}
+CRITICAL ANTI-HALLUCINATION RULES:
+1. NEVER substitute uncommon words with common words (e.g. if the ink says 'میس', write 'میس', DO NOT write 'کچن').
+2. NEVER guess missing words. Only transcribe what is visibly inked.
+3. Verify subtle ligatures and context carefully.
 
-Review every objection against the image, settle disputes by inspecting the pixels, and produce the final Urdu text. Ensure words under watermarks, ligatures, and nuqtas are checked.
-Output ONLY the final certified Urdu text between [VERDICT_START] and [VERDICT_END]. No notes or English."""
+[MUNSHI DRAFT]: {munshi_draft}
+[INSPECTOR OBJECTIONS]: {inspector_objections}
+
+OUTPUT FORMAT (STRICT):
+[VERDICT_START]
+(Put 100% verified Urdu text here)
+[VERDICT_END]
+
+[DOUBTS_START]
+(If you have any doubt about any specific word, list: - Page word: [word1 / word2] (Reason). If NO doubts, write 'None')
+[DOUBTS_END]"""
+
     response = client_thanedar.models.generate_content(
-        model=MODEL,
+        model="gemini-3.5-flash-lite",
         contents=[pil_image, prompt],
+        config=strict_config
     )
-    full_output = (response.text or "").strip()
-    start_marker = "[VERDICT_START]"
-    end_marker = "[VERDICT_END]"
-    if start_marker in full_output and end_marker in full_output:
-        return full_output.split(start_marker, 1)[1].split(end_marker, 1)[0].strip()
-    return full_output
-
+    
+    full_output = response.text.strip()
+    
+    final_text = full_output
+    if "[VERDICT_START]" in full_output and "[VERDICT_END]" in full_output:
+        final_text = full_output.split("[VERDICT_START]")[1].split("[VERDICT_END]")[0].strip()
+        
+    doubts = "None"
+    if "[DOUBTS_START]" in full_output and "[DOUBTS_END]" in full_output:
+        doubts = full_output.split("[DOUBTS_START]")[1].split("[DOUBTS_END]")[0].strip()
+        
+    return final_text, doubts
 
 def run_multi_agent_pipeline(pil_image):
-    print("Munshi draft bana raha hai...")
-    munshi_draft = run_munshi(pil_image)
-    print("Inspector Munshi ke draft par aitrazat aur behas kar raha hai...")
-    inspector_objections = run_inspector_debate(pil_image, munshi_draft)
-    print("Thanedar behas aur tasveer dekh kar aakhri faisla kar raha hai...")
-    return run_thanedar_ruling(pil_image, munshi_draft, inspector_objections)
+    draft = run_munshi(pil_image)
+    objections = run_inspector_debate(pil_image, draft)
+    final_text, doubts = run_thanedar_ruling(pil_image, draft, objections)
+    return final_text, doubts
