@@ -1,4 +1,4 @@
-name: 3 - General Book Error Fixer
+name: 3 - Fix Book Errors from Report
 
 on:
   workflow_dispatch:
@@ -24,17 +24,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
-        run: |
-          pip install google-generativeai
-
-      - name: Apply General Corrections to JSON & TXT
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Apply Corrections to JSON & TXT Files
         run: |
           python - << 'EOF'
-          import os, re, glob, json, time, shutil
-          import google.generativeai as genai
+          import os, re, csv, glob, json
 
           OUTPUT_DIR = "output"
           FULL_JSON_PATH = os.path.join(OUTPUT_DIR, "full_book.json")
@@ -45,228 +38,191 @@ jobs:
           os.makedirs(PAGES_TXT_DIR, exist_ok=True)
           os.makedirs(PAGES_JSON_DIR, exist_ok=True)
 
-          # 1. تمام صفحات کو لوڈ کرنا
+          # 1. پہلے full_book.json اور pages_json سے صفحات لوڈ کریں
           pages_map = {}
-          all_jsons = [f for f in glob.glob("**/*.json", recursive=True) if not f.startswith(".git") and "pages_json" not in f]
-          book_json_files = []
-
-          # سب سے پہلے مرکزی full_book.json کو ترجیح دیں
           if os.path.exists(FULL_JSON_PATH):
-              all_jsons = [FULL_JSON_PATH] + [f for f in all_jsons if f != FULL_JSON_PATH]
-
-          for jf in all_jsons:
-              try:
+              with open(FULL_JSON_PATH, "r", encoding="utf-8") as f:
+                  for item in json.load(f):
+                      pages_map[int(item["page"])] = str(item["content"])
+          else:
+              for jf in sorted(glob.glob(os.path.join(PAGES_JSON_DIR, "*.json"))):
                   with open(jf, "r", encoding="utf-8") as f:
-                      data = json.load(f)
-                  if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "page" in data[0]:
-                      book_json_files.append(jf)
-                      for item in data:
-                          p_no = int(item["page"])
-                          if p_no not in pages_map and item.get("content"):
-                              pages_map[p_no] = str(item["content"]).strip()
-                  elif isinstance(data, dict) and "page" in data and "content" in data:
-                      p_no = int(data["page"])
-                      if p_no not in pages_map and data.get("content"):
-                          pages_map[p_no] = str(data["content"]).strip()
+                      d = json.load(f)
+                      pages_map[int(d["page"])] = str(d["content"])
+
+          if not pages_map:
+              print("❌ full_book.json یا pages_json نہیں ملے!")
+              exit(1)
+
+          # 2. ہندی الفاظ، AI نوٹس اور ٹیگز صاف کرنے والا فنکشن
+          HINDI_MAP = {
+              "मुझे याद": "مجھے یاد",
+              "मुझे": "مجھے",
+              "तुम्हारी": "تمہاری",
+              "गया": "گیا",
+              "मत जाना": "مت جانا",
+              "मत कहو": "مت کہو",
+              "मत कहो": "مت کہو",
+              "मत": "مت",
+              "इसी": "اسی",
+              "इस बार": "اس بار",
+              "रहा": "رہا",
+              "پڑता": "پڑتا",
+              "ता": "تا",
+          }
+
+          def clean_artifacts(text):
+              # [DOUBTS_START] ... [DOUBTS_END] پورا بلاک ہٹانا
+              text = re.sub(r'\[DOUBTS_START\][\s\S]*?(?:\[DOUBTS_END\]|$)', '', text, flags=re.IGNORECASE)
+              # ٹوٹے ہوئے یا مکمل VERDICT ٹیگز ہٹانا (جیسے [VERDICT_START یا [VERDICT_END])
+              text = re.sub(r'\[/?VERDICT[A-Z_]*\]?', '', text, flags=re.IGNORECASE)
+              # انگریزی AI نوٹس جیسے (Wait, let's keep...) ہٹانا
+              text = re.sub(r'\(\s*Wait,\s*let\'s\s*keep[^)]*\)', '', text, flags=re.IGNORECASE)
+              # ہندی الفاظ کو اردو میں بدلنا
+              for hw, uw in HINDI_MAP.items():
+                  text = text.replace(hw, uw)
+              # اگر کوئی دیوناگری حرف بچ جائے تو صاف کرنا
+              text = re.sub(r'[\u0900-\u097F]+', '', text)
+              return text.strip()
+
+          def flex_replace(text, wrong, right):
+              wrong = wrong.strip()
+              if not wrong or wrong == "(Not in JSON)":
+                  return text, False
+
+              # کوٹیشنز اور ڈاٹس کی لچکدار میچنگ
+              if wrong in text:
+                  return text.replace(wrong, right), True
+
+              # اگر ڈاٹس (..... یا ۔۔۔) یا اسپیس یا کوٹیشنز کا فرق ہو
+              pat = re.escape(wrong)
+              pat = re.sub(r'(\\\.|۔|…)+', r'[\\.۔…]+', pat)
+              pat = re.sub(r'(["”’’\'‘“])', r'["”’’\'‘“]*', pat)
+              pat = re.sub(r'\\ ', r'\\s+', pat)
+              new_text, count = re.subn(pat, right, text)
+              if count > 0:
+                  return new_text, True
+
+              return text, False
+
+          # 3. corrections.txt سے قوانین نکالنا (CSV فارمیٹ + جنرل سپورٹ)
+          rules = [] # [(page_list, wrong_str, right_str, error_type)]
+
+          if os.path.exists(CORRECTIONS_FILE):
+              with open(CORRECTIONS_FILE, "r", encoding="utf-8-sig") as cf:
+                  first_line = cf.readline()
+                  cf.seek(0)
+
+                  # چیک کریں کہ آیا یہ CSV فائل ہے
+                  if "JSON_Page" in first_line and "Wrong_Text_in_JSON" in first_line:
+                      reader = csv.DictReader(cf)
+                      for row in reader:
+                          j_page_str = (row.get("JSON_Page") or "").strip()
+                          err_type = (row.get("Error_Type") or "").strip()
+                          wrong_txt = (row.get("Wrong_Text_in_JSON") or "").strip()
+                          right_txt = (row.get("Correct_Text_in_PDF") or "").strip()
+
+                          if not wrong_txt or wrong_txt == "(Not in JSON)" or j_page_str == "N/A":
+                              continue
+
+                          # پیج نمبر یا رینج نکالنا (جیسے "4", "78-79", "93-128")
+                          target_pages = []
+                          if "-" in j_page_str:
+                              parts = re.findall(r'\d+', j_page_str)
+                              if len(parts) == 2:
+                                  target_pages = list(range(int(parts[0]), int(parts[1]) + 1))
+                          elif j_page_str.isdigit():
+                              target_pages = [int(j_page_str)]
+
+                          rules.append((target_pages, wrong_txt, right_txt, err_type))
+                  else:
+                      # اگر سادہ ٹیکسٹ یا مارک ڈاؤن ٹیبل ہو
+                      for line in cf:
+                          ls = line.strip()
+                          if ls.startswith('|') and ls.endswith('|'):
+                              cols = [c.strip() for c in ls.strip('|').split('|')]
+                              if len(cols) >= 3 and re.search(r'\d+', cols[0]):
+                                  p_no = int(re.search(r'\d+', cols[0]).group(0))
+                                  w_s = cols[1].replace('**', '').strip('”"“ ')
+                                  r_s = cols[2].replace('**', '').strip('”"“ ')
+                                  rules.append(([p_no], w_s, r_s, "Table"))
+
+          print(f"📋 Loaded {len(rules)} correction rules from {CORRECTIONS_FILE}")
+
+          # 4. تمام قوانین کو صفحات پر لاگو کرنا
+          applied_count = 0
+
+          for target_pages, wrong_txt, right_txt, err_type in rules:
+              # خاص کیس 1: صفحہ بدلتے ہوئے ڈپلیکیٹ جملہ (جیسے 78-79)
+              if "Duplicate Text" in err_type and len(target_pages) == 2:
+                  p1, p2 = target_pages[0], target_pages[1]
+                  if p1 in pages_map and p2 in pages_map:
+                      # صفحہ 78 کے آخر میں درست جملہ مکمل کریں اور صفحہ 79 کے شروع سے ڈپلیکیٹ ٹکڑا ہٹائیں
+                      pages_map[p1] = re.sub(r'وہ بے بسی سے یہ سب کچھ دیکھتی رہ گئی۔?\s*$', right_txt, pages_map[p1].strip())
+                      pages_map[p2] = re.sub(r'^\s*دیکھ رہی تھی۔?\s*', '', pages_map[p2].strip())
+                      applied_count += 1
+                      continue
+
+              # خاص کیس 2: اگر ایک ہی خانے میں سلیش (/) سے کئی غلط الفاظ لکھے ہوں (جیسے: ڈینھیل / ڈینشیل / ڈینیمل / ڈیپشیل)
+              if "/" in wrong_txt and "/" not in right_txt and "(" not in wrong_txt:
+                  variants = [v.strip() for v in wrong_txt.split("/") if v.strip()]
+              else:
+                  variants = [wrong_txt]
+
+              search_pages = target_pages if target_pages else list(pages_map.keys())
+
+              for v_wrong in variants:
+                  hit = False
+                  for p_no in search_pages:
+                      if p_no in pages_map:
+                          new_t, ok = flex_replace(pages_map[p_no], v_wrong, right_txt)
+                          if ok:
+                              # اگر واٹر مارک ہٹایا ہے تو فالتو خالی لائن بھی صاف کریں
+                              if right_txt == "":
+                                  new_t = re.sub(r'\n\s*\n', '\n', new_t)
+                              pages_map[p_no] = new_t
+                              applied_count += 1
+                              hit = True
+                  # اگر مطلوبہ صفحے پر نہ ملا ہو (صفحہ نمبر آگے پیچھے ہونے کی صورت میں) تو پوری کتاب میں چیک کریں
+                  if not hit:
+                      for p_no in pages_map:
+                          new_t, ok = flex_replace(pages_map[p_no], v_wrong, right_txt)
+                          if ok:
+                              pages_map[p_no] = new_t
+                              applied_count += 1
+
+          # 5. ہر صفحے سے ہندی الفاظ اور ٹیگز صاف کریں اور تمام فائلوں کو اپڈیٹ کریں
+          full_book_list = []
+          for p_no in sorted(pages_map.keys()):
+              cleaned_content = clean_artifacts(pages_map[p_no])
+              pages_map[p_no] = cleaned_content
+              full_book_list.append({"page": p_no, "content": cleaned_content})
+
+              # (الف) output/pages_txt/page_XXXX.txt اپڈیٹ کریں
+              with open(os.path.join(PAGES_TXT_DIR, f"page_{p_no:04d}.txt"), "w", encoding="utf-8") as tf:
+                  tf.write(cleaned_content)
+
+              # (ب) output/pages_json/page_XXXX.json اپڈیٹ کریں
+              with open(os.path.join(PAGES_JSON_DIR, f"page_{p_no:04d}.json"), "w", encoding="utf-8") as jf:
+                  json.dump({"page": p_no, "content": cleaned_content}, jf, ensure_ascii=False, indent=2)
+
+          # (ج) output/full_book.json اپڈیٹ کریں
+          with open(FULL_JSON_PATH, "w", encoding="utf-8") as f:
+              json.dump(full_book_list, f, ensure_ascii=False, indent=2)
+
+          # (د) output/ میں پڑی پرانی *_page_*.txt فائلوں کو ہٹا دیں تاکہ وہ دوبارہ پرانی غلطیاں واپس نہ لائیں
+          for old_raw_txt in glob.glob(os.path.join(OUTPUT_DIR, "*_page_*.txt")):
+              try:
+                  os.remove(old_raw_txt)
               except Exception:
                   pass
 
-          for tf in glob.glob(os.path.join(OUTPUT_DIR, "**", "*.txt"), recursive=True):
-              nums = re.findall(r'\d+', os.path.basename(tf))
-              if nums:
-                  p_no = int(nums[-1])
-                  if p_no not in pages_map:
-                      with open(tf, "r", encoding="utf-8") as f:
-                          pages_map[p_no] = f.read().strip()
-
-          if not pages_map:
-              print("❌ کوئی کتاب یا صفحات نہیں ملے!")
-              exit(1)
-
-          print(f"📚 کل {len(pages_map)} صفحات لوڈ ہو گئے۔")
-
-          # 2. جنرل کلینر
-          def general_clean(text):
-              text = re.sub(r'\(\s*(?:Wait|Note|Let\'s|Correction)[^)]*\)', '', text, flags=re.IGNORECASE)
-              text = re.sub(r'\[/?[A-Z_]{4,}\]?', '', text)
-              text = re.sub(r'\n+None\s*$', '', text)
-              # پچھلے اسکرپٹ سے ڈبل ہونے والے الفاظ کی صفائی
-              text = text.replace("بتاؤں بتاؤں", "بتاؤں")
-              text = text.replace("وہ شخص وہ شخص", "وہ شخص")
-              text = text.replace("زیادہ تکلیف دہ نہیں ہو زیادہ تکلیف دہ نہیں ہو", "زیادہ تکلیف دہ نہیں ہو")
-              text = text.replace("باہر مت جانا (باہر مت جانا)", "باہر مت جانا")
-              text = text.replace("’’مجھے...’’ ’’مجھے", "’’مجھے")
-              text = text.replace("ہوتا تو\nتو کیا", "ہوتا تو\nکیا")
-              # بریکٹ اور کوٹس والے بقایا 4 فقروں کی درستگی
-              text = text.replace("ٹھیک ہے ۔ ٹھیک ہے یار!", "ٹھیک ہے یار!")
-              text = text.replace("اب تم بڑے ہو رہے ہو رہے ہو۔", "اب تم بڑے ہو رہے ہو۔")
-              text = text.replace("سعود نے اپنی فیملی کے ذریعے (دینے / یا باضابطہ) کا پروپوزل", "سعود نے اپنی فیملی کے ذریعے ایمان کا پروپوزل")
-              text = text.replace("”تم نہ۔۔۔“ اس کی بات پر ہنس پڑے۔", "ڈاکٹر خورشید اس کی بات پر ہنس پڑے۔")
-              return text.strip()
-
-          # اگر آخری صفحہ 155، صفحہ 154 کا ڈپلیکیٹ ہے تو اسے ہمیشہ کے لیے ہٹا دیں
-          if 154 in pages_map and 155 in pages_map:
-              if "ڈائننگ ٹیبل کے اوپر لٹکنے والا آرائشی لیمپ" in pages_map[155]:
-                  print("🗑️ ڈپلیکیٹ صفحہ 155 ہٹایا جا رہا ہے...")
-                  del pages_map[155]
-
-          # 3. corrections.txt کو پڑھنا
-          def clean_extracted_phrase(s):
-              s = re.sub(r'^[”"“\'\.\…۔\*]+|[”"“\'\.\…۔\*]+$', '', s).strip()
-              return s.replace('**', '').replace('\\!', '!').replace('\\_', '_').strip()
-
-          report_text = ""
-          if os.path.exists(CORRECTIONS_FILE):
-              with open(CORRECTIONS_FILE, "r", encoding="utf-8") as cf:
-                  report_text = cf.read().strip()
-
-          page_rules = {}
-
-          def add_rule(p_no, wrong_str, right_str):
-              w_parts = [p.strip() for p in re.split(r'\.{3,}|…+', wrong_str) if p.strip()]
-              r_parts = [p.strip() for p in re.split(r'\.{3,}|…+', right_str) if p.strip()]
-              if len(w_parts) == len(r_parts) and len(w_parts) > 1:
-                  for wp, rp in zip(w_parts, r_parts):
-                      if wp and rp and wp != rp:
-                          page_rules.setdefault(p_no, []).append((wp, rp))
-              elif wrong_str and right_str and wrong_str != right_str:
-                  page_rules.setdefault(p_no, []).append((wrong_str, right_str))
-
-          if report_text:
-              cur_page = None
-              pending_right = None
-              pending_wrong = None
-
-              for line in report_text.splitlines():
-                  ls = line.strip()
-
-                  m_p = re.search(r'صفحہ\s*(\d+)', ls)
-                  if m_p and not ls.startswith('|'):
-                      cur_page = int(m_p.group(1))
-                      pending_right = None
-                      pending_wrong = None
-
-                  if 'leftarrow' in ls and 'فائل میں:' in ls:
-                      parts = re.split(r'\$?\\leftarrow\$?', ls)
-                      if len(parts) == 2:
-                          w_s = clean_extracted_phrase(parts[0].split('فائل میں:', 1)[-1])
-                          r_s = clean_extracted_phrase(parts[1].split(':', 1)[-1])
-                          if cur_page:
-                              add_rule(cur_page, w_s, r_s)
-                      continue
-
-                  if ('اصل متن:' in ls or 'اصل PDF:' in ls):
-                      key = 'اصل متن:' if 'اصل متن:' in ls else 'اصل PDF:'
-                      pending_right = clean_extracted_phrase(ls.split(key, 1)[1])
-                      if pending_wrong and cur_page:
-                          add_rule(cur_page, pending_wrong, pending_right)
-                          pending_wrong, pending_right = None, None
-                      continue
-
-                  if 'فائل میں:' in ls:
-                      pending_wrong = clean_extracted_phrase(ls.split('فائل میں:', 1)[1])
-                      if pending_right and cur_page:
-                          add_rule(cur_page, pending_wrong, pending_right)
-                          pending_wrong, pending_right = None, None
-                      continue
-
-                  if ls.startswith('|') and ls.endswith('|'):
-                      cols = [c.strip() for c in ls.strip('|').split('|')]
-                      if len(cols) >= 3:
-                          pm = re.search(r'(\d+)', cols[0])
-                          if pm:
-                              p_no = int(pm.group(1))
-                              w_str = clean_extracted_phrase(cols[1])
-                              r_str = clean_extracted_phrase(cols[2])
-                              add_rule(p_no, w_str, r_str)
-
-          def flex_replace(text, wrong, right):
-              if right in text and wrong not in text.replace(right, ""):
-                  return text, True
-              if wrong in text:
-                  return text.replace(wrong, right, 1), True
-              pat = re.escape(wrong)
-              pat = re.sub(r'(\\\.|۔|‘|’|،|”|“)+', r'[\\.۔…‘’،”"“\\s]+', pat)
-              pat = re.sub(r'\\ ', r'\\s+', pat)
-              new_t, count = re.subn(pat, right, text, count=1)
-              return new_t, (count > 0)
-
-          # 4. صفحات پر قوانین لاگو کرنا
-          unresolved_pages = set()
-          fixed_count = 0
-
-          for p_no in sorted(pages_map.keys()):
-              pages_map[p_no] = general_clean(pages_map[p_no])
-
-          for p_no, rules in page_rules.items():
-              for w_s, r_s in rules:
-                  applied = False
-                  for target_p in [p_no, p_no + 1, p_no - 1]:
-                      if target_p in pages_map:
-                          new_txt, ok = flex_replace(pages_map[target_p], w_s, r_s)
-                          if ok:
-                              pages_map[target_p] = general_clean(new_txt)
-                              fixed_count += 1
-                              applied = True
-                              break
-                  if not applied:
-                      unresolved_pages.add(p_no)
-
-          # 5. جو پیچیدہ غلطیاں رہ جائیں انہیں Gemini AI سے ٹھیک کروانا
-          api_key = os.environ.get("GEMINI_API_KEY")
-          if api_key and report_text and unresolved_pages:
-              genai.configure(api_key=api_key)
-              model = genai.GenerativeModel("gemini-2.5-flash")
-              for p_no in sorted(unresolved_pages):
-                  if p_no not in pages_map:
-                      continue
-                  print(f"🤖 AI Fixing complex errors on Page {p_no}...")
-                  prompt = f"""آپ ایک ماہر اردو ایڈیٹر ہیں۔
-          نیچے دی گئی غلطیوں کی رپورٹ کو دیکھتے ہوئے صفحہ نمبر {p_no} کے متن میں مطلوبہ تصحیحات کریں۔
-          باقی اصل متن میں کوئی تبدیلی نہ کریں اور صرف صفحے کا مکمل درست متن واپس کریں۔
-
-          --- رپورٹ ---
-          {report_text}
-
-          --- صفحہ {p_no} کا متن ---
-          {pages_map[p_no]}"""
-                  try:
-                      res = model.generate_content(prompt)
-                      if res and res.text and len(res.text.strip()) > 30:
-                          pages_map[p_no] = general_clean(res.text.strip())
-                      time.sleep(2)
-                  except Exception as e:
-                      print(f"AI skip page {p_no}: {e}")
-
-          # 6. پرانے فولڈرز صاف کر کے تمام فائلوں کو نئے سرے سے محفوظ کرنا (تاکہ ڈپلیکیٹ صفحہ 155 باقی نہ رہے)
-          shutil.rmtree(PAGES_TXT_DIR, ignore_errors=True)
-          shutil.rmtree(PAGES_JSON_DIR, ignore_errors=True)
-          os.makedirs(PAGES_TXT_DIR, exist_ok=True)
-          os.makedirs(PAGES_JSON_DIR, exist_ok=True)
-
-          full_book_list = []
-          for p_no in sorted(pages_map.keys()):
-              content = pages_map[p_no]
-              full_book_list.append({"page": p_no, "content": content})
-
-              with open(os.path.join(PAGES_TXT_DIR, f"page_{p_no:04d}.txt"), "w", encoding="utf-8") as tf:
-                  tf.write(content)
-              with open(os.path.join(PAGES_JSON_DIR, f"page_{p_no:04d}.json"), "w", encoding="utf-8") as jf:
-                  json.dump({"page": p_no, "content": content}, jf, ensure_ascii=False, indent=2)
-
-          target_jsons = set(book_json_files + [FULL_JSON_PATH])
-          for tj in target_jsons:
-              os.makedirs(os.path.dirname(tj) or ".", exist_ok=True)
-              with open(tj, "w", encoding="utf-8") as out_f:
-                  json.dump(full_book_list, out_f, ensure_ascii=False, indent=2)
-              print(f"✅ Updated Book JSON: {tj}")
-
-          print(f"🎉 کل {fixed_count} تصحیحات کامیابی سے لاگو ہو گئیں! کل صفحات: {len(full_book_list)}")
+          print(f"✅ الحمد للہ! کل {applied_count} تصحیحات کامیابی سے لاگو ہو گئیں اور full_book.json، pages_json اور pages_txt اپڈیٹ ہو گئے!")
           EOF
 
-      - name: Commit and Push Changes
+      - name: Commit and Push Updated Files
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || (git commit -m "Auto-update: Applied final corrections and removed duplicate page 155" && git push)
+          git diff --staged --quiet || (git commit -m "Applied CSV corrections to full_book.json, pages_json, and pages_txt" && git push)
