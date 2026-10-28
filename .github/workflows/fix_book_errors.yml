@@ -45,10 +45,8 @@ jobs:
           os.makedirs(PAGES_TXT_DIR, exist_ok=True)
           os.makedirs(PAGES_JSON_DIR, exist_ok=True)
 
-          # 1. تمام صفحات کو لوڈ کرنا (چاہے full_book.json میں ہوں یا الگ الگ فائلوں میں)
+          # 1. تمام صفحات کو لوڈ کرنا
           pages_map = {}
-
-          # الف: اگر ریپوزٹری میں کوئی بھی لسٹ والی JSON فائل ہے (جیسے full_book.json)
           all_jsons = [f for f in glob.glob("**/*.json", recursive=True) if not f.startswith(".git")]
           book_json_files = []
 
@@ -69,7 +67,6 @@ jobs:
               except Exception:
                   pass
 
-          # ب: اگر الگ الگ TXT فائلیں موجود ہیں
           for tf in glob.glob(os.path.join(OUTPUT_DIR, "**", "*.txt"), recursive=True):
               nums = re.findall(r'\d+', os.path.basename(tf))
               if nums:
@@ -82,20 +79,42 @@ jobs:
               print("❌ کوئی کتاب یا صفحات نہیں ملے!")
               exit(1)
 
+          # اگر صفحہ 114 غائب ہے تو اسے شامل کریں
+          if 114 not in pages_map:
+              pages_map[114] = """پھر جیسے یہ ایک روٹین بن گئی تھی۔ وہ روز دوپہر کو وہاں آتا۔ لنچ کرتا اور لنچ کے دوران مختلف انداز میں اس کی آنکھوں کی اسکیچنگ کرتا رہتا۔ اسے اس لڑکی سے ایک عجیب سا انس ہو گیا تھا۔ پھر اسے اچانک ایک ہفتے کے لیے کراچی جانا پڑ گیا اور یہ سات دن اس کی زندگی کے سب سے مشکل اور تکلیف دہ دن تھے۔ اسے اب احساس ہوا کہ وہ اس روٹین کا کتنا عادی ہو چکا تھا۔ وہ رات کو وہ سارے چھوٹے بڑے اسکیچز نکال کر بیٹھ جاتا جو اس نے مختلف اوقات میں بنائے تھے اور پھر جیسے اس کی بے تابی اور بے چینی میں اور اضافہ ہو جاتا۔
+          سات دن کے بعد لاہور ائیرپورٹ پر اترتے ہی وہ آفس یا گھر جانے کے بجائے سیدھا اسی فاسٹ فوڈ چین پر گیا تھا اور وہاں جا کر اسے جیسے مایوسی ہوئی تھی۔ وہ اسے کاؤنٹر کے پیچھے نظر نہیں آئی۔ وہ مایوس ہو کر وہاں سے پلٹ آیا تھا۔
+          اگلے دن دوپہر کو وہ بڑی بے تابی کے عالم میں وہاں گیا تھا اور دروازے سے داخل ہوتے ہی اس نے گہرا سانس لیا تھا۔ وہ وہیں موجود تھی۔ خوشی کی ایک عجیب سی لہر اس کے پورے سراپے میں دوڑ گئی تھی۔ اس دن کاؤنٹر پر اسے اپنا آرڈر نوٹ کرواتے کرواتے اس نے کہا۔ ”کیا میں آپ کا نام پوچھ سکتا ہوں؟“ اس لڑکی کے ہونٹوں سے مسکراہٹ غائب ہو گئی تھی۔ سر اٹھائے وہ کچھ نہ سمجھنے والے انداز میں اسے دیکھ رہی تھی۔
+          ”میں دراصل یہاں روز آتا ہوں۔ آپ ہی مجھے اٹینڈ کرتی ہیں‘ اس لیے میں نے سوچا کہ نام معلوم ہونا چاہیے۔ میرا نام ڈینئیل ایڈگر ہے۔“
+          اس نے شائستہ لہجے میں وضاحت کی۔ ڈینئیل کو اس کی آنکھوں میں عجیب سی الجھن نظر آئی۔
+          ”روز یہاں آتے ہیں؟“ سوالیہ لہجے میں کہا گیا یہ جملہ ڈینئیل کو حیران کر گیا تھا۔ وہ اس فاسٹ فوڈ چین میں تو بہت عرصے سے آ رہا تھا مگر باقاعدگی سے نہیں۔ کبھی کبھار وہ کسی دوسرے ریسٹورنٹ کی طرف بھی چلا جایا کرتا تھا مگر جب سے یہ لڑکی وہاں آئی تھی وہ باقاعدگی سے وہاں ایک ماہ سے جا رہا تھا اور وہ لڑکی اس سے کہہ رہی تھی۔
+          ”روز یہاں آتے ہیں؟“ اس کا خیال تھا وہ بھی اب تک اس کے چہرے سے شناسا ہو گئی ہو گی۔
+          ”ہاں میں روز یہاں آتا ہوں آپ ہی روز اٹینڈ کرتی ہیں مجھے...... اسی وقت.... کیا آپ کو یاد نہیں ہے؟“
+          ”نہیں مجھے یاد نہیں ہے۔“ وہ بے حس و حرکت ہو گیا۔ لڑکی کاؤنٹر کے پیچھے موجود دروازے سے غائب ہو چکی تھی۔ اسے کبھی اتنی خفت کا سامنا نہیں کرنا پڑا تھا۔
+          ”میں اتنا برا تو نہیں ہوں کہ میرا چہرہ یاد نہ رہ سکے۔ کیا یہ لڑکی جان بوجھ کر جھوٹ بول رہی ہے یا واقعی وہ میرے چہرے سے شناسا نہیں ہے۔“ وہ خود بھی الجھ گیا۔
+          وہ دس منٹ کے بعد دوبارہ نمودار ہوئی اور ٹرے لے کر اس کی طرف آئی۔ بل ادا کرتے ہوئے ڈینئیل نے پوچھا۔
+          ”میں نے آپ سے آپ کا نام پوچھا تھا؟“ وہ کچھ دیر بے تاثر آنکھوں سے اس کا چہرہ دیکھتی رہی\n113"""
+
           print(f"📚 کل {len(pages_map)} صفحات لوڈ ہو گئے۔")
 
-          # 2. جنرل کلینر (کسی بھی کتاب میں آنے والے AI نوٹس، ٹیگز اور غیر اردو سکرپٹ کی صفائی)
+          # 2. جنرل کلینر (ٹیگز، نوٹس اور پچھلی ڈپلی کیشنز کی صفائی)
           def general_clean(text):
-              # انگریزی AI خود کلامی جیسے (Wait, let's keep...) وغیرہ ہٹانا
               text = re.sub(r'\(\s*(?:Wait|Note|Let\'s|Correction)[^)]*\)', '', text, flags=re.IGNORECASE)
-              # [VERDICT_START] یا اس جیسے بریکٹ ٹیگز ہٹانا
-              text = re.sub(r'\[/?[A-Z_]{4,}\]', '', text)
+              # کھلے یا بند بریکٹ ٹیگز جیسے [VERDICT_START یا [VERDICT_END] اور None ہٹانا
+              text = re.sub(r'\[/?[A-Z_]{4,}\]?', '', text)
+              text = re.sub(r'\n+None\s*$', '', text)
+              # پچھلے اسکرپٹ سے ڈبل ہونے والے الفاظ کی صفائی
+              text = text.replace("بتاؤں بتاؤں", "بتاؤں")
+              text = text.replace("وہ شخص وہ شخص", "وہ شخص")
+              text = text.replace("زیادہ تکلیف دہ نہیں ہو زیادہ تکلیف دہ نہیں ہو", "زیادہ تکلیف دہ نہیں ہو")
+              text = text.replace("باہر مت جانا (باہر مت جانا)", "باہر مت جانا")
+              text = text.replace("’’مجھے...’’ ’’مجھے", "’’مجھے")
+              text = text.replace("ہوتا تو\nتو کیا", "ہوتا تو\nکیا")
               return text.strip()
 
-          # 3. corrections.txt کو جنرل طریقے سے پڑھنا (ٹیبل اور بلٹ لسٹ دونوں فارمیٹس)
+          # 3. corrections.txt کو پڑھنا (دونوں ترتیب: اصل پہلے یا فائل پہلے، اور ... والے جملے)
           def clean_extracted_phrase(s):
               s = re.sub(r'\([^)]*\)', '', s).strip()
-              s = re.sub(r'^[”"“\'\.\…۔]+|[”"“\'\.\…۔]+$', '', s).strip()
+              s = re.sub(r'^[”"“\'\.\…۔\*]+|[”"“\'\.\…۔\*]+$', '', s).strip()
               return s.replace('**', '').replace('\\!', '!').replace('\\_', '_').strip()
 
           report_text = ""
@@ -103,52 +122,60 @@ jobs:
               with open(CORRECTIONS_FILE, "r", encoding="utf-8") as cf:
                   report_text = cf.read().strip()
 
-          page_rules = {}   # {page_num: [(wrong, right), ...]}
-          global_rules = [] # [(wrong, right), ...]
+          page_rules = {}
+
+          def add_rule(p_no, wrong_str, right_str):
+              # اگر جملے میں ... کے ذریعے مختلف ٹکڑے جڑے ہوں تو انہیں الگ الگ رول بنائیں
+              w_parts = [p.strip() for p in re.split(r'\.{3,}|…+', wrong_str) if p.strip()]
+              r_parts = [p.strip() for p in re.split(r'\.{3,}|…+', right_str) if p.strip()]
+              if len(w_parts) == len(r_parts) and len(w_parts) > 1:
+                  for wp, rp in zip(w_parts, r_parts):
+                      if wp and rp and wp != rp:
+                          page_rules.setdefault(p_no, []).append((wp, rp))
+              elif wrong_str and right_str and wrong_str != right_str:
+                  page_rules.setdefault(p_no, []).append((wrong_str, right_str))
 
           if report_text:
               cur_page = None
-              right_tmp = None
+              pending_right = None
+              pending_wrong = None
 
               for line in report_text.splitlines():
                   ls = line.strip()
 
-                  # صفحہ نمبر کی پہچان: "صفحہ 83:" یا "- صفحہ 12:"
                   m_p = re.search(r'صفحہ\s*(\d+)', ls)
                   if m_p and not ls.startswith('|'):
                       cur_page = int(m_p.group(1))
-                      right_tmp = None
+                      pending_right = None
+                      pending_wrong = None
 
-                  # فارمیٹ 1: "اصل متن:" اور "فائل میں:"
-                  if 'اصل متن:' in ls:
-                      right_tmp = clean_extracted_phrase(ls.split('اصل متن:', 1)[1])
-                      continue
-                  if 'فائل میں:' in ls and right_tmp:
-                      wrong_tmp = clean_extracted_phrase(ls.split('فائل میں:', 1)[1])
-                      if wrong_tmp and right_tmp:
+                  # اگر ایک ہی لائن میں تیر (leftarrow) ہو
+                  if 'leftarrow' in ls and 'فائل میں:' in ls:
+                      parts = re.split(r'\$?\\leftarrow\$?', ls)
+                      if len(parts) == 2:
+                          w_s = clean_extracted_phrase(parts[0].split('فائل میں:', 1)[-1])
+                          r_s = clean_extracted_phrase(parts[1].split(':', 1)[-1])
                           if cur_page:
-                              page_rules.setdefault(cur_page, []).append((wrong_tmp, right_tmp))
-                          global_rules.append((wrong_tmp, right_tmp))
-                      right_tmp = None
+                              add_rule(cur_page, w_s, r_s)
                       continue
 
-                  # فارمیٹ 2: ایک ہی لائن میں "کی جگہ" یا "کے لیے" (جیسے: لفظ ”گیا“ کی جگہ ”गया“ درج ہے)
-                  quotes = re.findall(r'[”"“]([^”"“]+)[”"“]', ls)
-                  if len(quotes) == 2 and ('کی جگہ' in ls or 'کے لیے' in ls or 'بجائے' in ls):
-                      # عام طور پر پہلا کوٹ درست لفظ ہوتا ہے اور دوسرا غلط (یا دیوناگری والا غلط)
-                      q1, q2 = quotes[0].strip(), quotes[1].strip()
-                      if re.search(r'[\u0900-\u097F]', q2):
-                          wrong_q, right_q = q2, q1
-                      elif re.search(r'[\u0900-\u097F]', q1):
-                          wrong_q, right_q = q1, q2
-                      else:
-                          right_q, wrong_q = q1, q2
-                      if cur_page:
-                          page_rules.setdefault(cur_page, []).append((wrong_q, right_q))
-                      global_rules.append((wrong_q, right_q))
+                  # فارمیٹ 1: اصل متن / اصل PDF اور فائل میں (کسی بھی ترتیب میں آئیں)
+                  if ('اصل متن:' in ls or 'اصل PDF:' in ls):
+                      key = 'اصل متن:' if 'اصل متن:' in ls else 'اصل PDF:'
+                      pending_right = clean_extracted_phrase(ls.split(key, 1)[1])
+                      if pending_wrong and cur_page:
+                          add_rule(cur_page, pending_wrong, pending_right)
+                          pending_wrong, pending_right = None, None
                       continue
 
-                  # فارمیٹ 3: مارک ڈاؤن ٹیبل | صفحہ نمبر | فائل میں موجود متن | اصل کتاب کا درست متن |
+                  if 'فائل میں:' in ls:
+                      pending_wrong = clean_extracted_phrase(ls.split('فائل میں:', 1)[1])
+                      if pending_right and cur_page:
+                          add_rule(cur_page, pending_wrong, pending_right)
+                          pending_wrong, pending_right = None, None
+                      continue
+
+                  # فارمیٹ 2: مارک ڈاؤن ٹیبل
                   if ls.startswith('|') and ls.endswith('|'):
                       cols = [c.strip() for c in ls.strip('|').split('|')]
                       if len(cols) >= 3:
@@ -157,43 +184,43 @@ jobs:
                               p_no = int(pm.group(1))
                               w_str = clean_extracted_phrase(cols[1])
                               r_str = clean_extracted_phrase(cols[2])
-                              if w_str and r_str:
-                                  page_rules.setdefault(p_no, []).append((w_str, r_str))
-                                  global_rules.append((w_str, r_str))
+                              add_rule(p_no, w_str, r_str)
 
           def flex_replace(text, wrong, right):
+              # اگر درست جملہ پہلے ہی موجود ہے تو دوبارہ ریپلیس نہ کریں (ڈپلیکیشن سے بچاؤ)
+              if right in text and wrong not in text.replace(right, ""):
+                  return text, True
               if wrong in text:
-                  return text.replace(wrong, right), True
-              # اگر ڈاٹس یا اسپیس کا معمولی فرق ہو
+                  return text.replace(wrong, right, 1), True
               pat = re.escape(wrong)
-              pat = re.sub(r'(\\\.|۔)+', r'[\\.۔…]+', pat)
+              pat = re.sub(r'(\\\.|۔|‘|’|،)+', r'[\\.۔…‘’،\\s]+', pat)
               pat = re.sub(r'\\ ', r'\\s+', pat)
-              new_t, count = re.subn(pat, right, text)
+              new_t, count = re.subn(pat, right, text, count=1)
               return new_t, (count > 0)
 
-          # 4. پہلے Python کے ذریعے تمام صفحات پر قوانین لاگو کرنا
+          # 4. صفحات پر قوانین لاگو کرنا (صرف متعلقہ صفحے یا قریبی +/-1 صفحے پر، پوری کتاب پر دوبارہ نہیں!)
           unresolved_pages = set()
           fixed_count = 0
 
           for p_no in sorted(pages_map.keys()):
-              txt = general_clean(pages_map[p_no])
-              if p_no in page_rules:
-                  for w_s, r_s in page_rules[p_no]:
-                      txt, ok = flex_replace(txt, w_s, r_s)
-                      if ok:
-                          fixed_count += 1
-                      else:
-                          unresolved_pages.add(p_no)
-              pages_map[p_no] = txt
+              pages_map[p_no] = general_clean(pages_map[p_no])
 
-          # اگر صفحہ نمبر تھوڑا آگے پیچھے ہو (جیسے PDF بمقابلہ کتاب کا صفحہ نمبر)، تو پوری کتاب پر چیک کریں
-          for w_s, r_s in global_rules:
-              for p_no in pages_map:
-                  pages_map[p_no], ok = flex_replace(pages_map[p_no], w_s, r_s)
-                  if ok:
-                      fixed_count += 1
+          for p_no, rules in page_rules.items():
+              for w_s, r_s in rules:
+                  applied = False
+                  # پہلے اصل صفحہ چیک کریں، نہ ملے تو +1 یا -1 صفحہ چیک کریں
+                  for target_p in [p_no, p_no + 1, p_no - 1]:
+                      if target_p in pages_map:
+                          new_txt, ok = flex_replace(pages_map[target_p], w_s, r_s)
+                          if ok:
+                              pages_map[target_p] = new_txt
+                              fixed_count += 1
+                              applied = True
+                              break
+                  if not applied:
+                      unresolved_pages.add(p_no)
 
-          # 5. جن صفحات کی پیچیدہ غلطیاں سادہ ریپلیس سے حل نہ ہو سکیں، انہیں Gemini AI سے ٹھیک کروانا
+          # 5. جو پیچیدہ غلطیاں رہ جائیں انہیں Gemini AI سے ٹھیک کروانا
           api_key = os.environ.get("GEMINI_API_KEY")
           if api_key and report_text and unresolved_pages:
               genai.configure(api_key=api_key)
@@ -203,7 +230,7 @@ jobs:
                       continue
                   print(f"🤖 AI Fixing complex errors on Page {p_no}...")
                   prompt = f"""آپ ایک ماہر اردو ایڈیٹر ہیں۔
-          نیچے دی گئی غلطیوں کی رپورٹ کو دیکھتے ہوئے صفحہ نمبر {p_no} کے متن میں مطلوبہ تصحیحات کریں اور غیر اردو (ہندی/انگریزی نوٹس) الفاظ کو درست اردو میں بدل دیں۔
+          نیچے دی گئی غلطیوں کی رپورٹ کو دیکھتے ہوئے صفحہ نمبر {p_no} کے متن میں مطلوبہ تصحیحات کریں۔
           باقی اصل متن میں کوئی تبدیلی نہ کریں اور صرف صفحے کا مکمل درست متن واپس کریں۔
 
           --- رپورٹ ---
@@ -219,7 +246,7 @@ jobs:
                   except Exception as e:
                       print(f"AI skip page {p_no}: {e}")
 
-          # 6. تمام فائلوں (full_book.json + pages_json + pages_txt) کو اپڈیٹ کرنا
+          # 6. تمام فائلوں کو اپڈیٹ کرنا
           full_book_list = []
           for p_no in sorted(pages_map.keys()):
               content = pages_map[p_no]
@@ -230,7 +257,6 @@ jobs:
               with open(os.path.join(PAGES_JSON_DIR, f"page_{p_no:04d}.json"), "w", encoding="utf-8") as jf:
                   json.dump({"page": p_no, "content": content}, jf, ensure_ascii=False, indent=2)
 
-          # output/full_book.json اور دیگر تمام بک JSON فائلوں کو اپڈیٹ کریں
           target_jsons = set(book_json_files + [FULL_JSON_PATH])
           for tj in target_jsons:
               os.makedirs(os.path.dirname(tj) or ".", exist_ok=True)
