@@ -33,7 +33,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python - << 'EOF'
-          import os, re, glob, json, time
+          import os, re, glob, json, time, shutil
           import google.generativeai as genai
 
           OUTPUT_DIR = "output"
@@ -47,8 +47,12 @@ jobs:
 
           # 1. تمام صفحات کو لوڈ کرنا
           pages_map = {}
-          all_jsons = [f for f in glob.glob("**/*.json", recursive=True) if not f.startswith(".git")]
+          all_jsons = [f for f in glob.glob("**/*.json", recursive=True) if not f.startswith(".git") and "pages_json" not in f]
           book_json_files = []
+
+          # سب سے پہلے مرکزی full_book.json کو ترجیح دیں
+          if os.path.exists(FULL_JSON_PATH):
+              all_jsons = [FULL_JSON_PATH] + [f for f in all_jsons if f != FULL_JSON_PATH]
 
           for jf in all_jsons:
               try:
@@ -79,27 +83,11 @@ jobs:
               print("❌ کوئی کتاب یا صفحات نہیں ملے!")
               exit(1)
 
-          # اگر صفحہ 114 غائب ہے تو اسے شامل کریں
-          if 114 not in pages_map:
-              pages_map[114] = """پھر جیسے یہ ایک روٹین بن گئی تھی۔ وہ روز دوپہر کو وہاں آتا۔ لنچ کرتا اور لنچ کے دوران مختلف انداز میں اس کی آنکھوں کی اسکیچنگ کرتا رہتا۔ اسے اس لڑکی سے ایک عجیب سا انس ہو گیا تھا۔ پھر اسے اچانک ایک ہفتے کے لیے کراچی جانا پڑ گیا اور یہ سات دن اس کی زندگی کے سب سے مشکل اور تکلیف دہ دن تھے۔ اسے اب احساس ہوا کہ وہ اس روٹین کا کتنا عادی ہو چکا تھا۔ وہ رات کو وہ سارے چھوٹے بڑے اسکیچز نکال کر بیٹھ جاتا جو اس نے مختلف اوقات میں بنائے تھے اور پھر جیسے اس کی بے تابی اور بے چینی میں اور اضافہ ہو جاتا۔
-          سات دن کے بعد لاہور ائیرپورٹ پر اترتے ہی وہ آفس یا گھر جانے کے بجائے سیدھا اسی فاسٹ فوڈ چین پر گیا تھا اور وہاں جا کر اسے جیسے مایوسی ہوئی تھی۔ وہ اسے کاؤنٹر کے پیچھے نظر نہیں آئی۔ وہ مایوس ہو کر وہاں سے پلٹ آیا تھا۔
-          اگلے دن دوپہر کو وہ بڑی بے تابی کے عالم میں وہاں گیا تھا اور دروازے سے داخل ہوتے ہی اس نے گہرا سانس لیا تھا۔ وہ وہیں موجود تھی۔ خوشی کی ایک عجیب سی لہر اس کے پورے سراپے میں دوڑ گئی تھی۔ اس دن کاؤنٹر پر اسے اپنا آرڈر نوٹ کرواتے کرواتے اس نے کہا۔ ”کیا میں آپ کا نام پوچھ سکتا ہوں؟“ اس لڑکی کے ہونٹوں سے مسکراہٹ غائب ہو گئی تھی۔ سر اٹھائے وہ کچھ نہ سمجھنے والے انداز میں اسے دیکھ رہی تھی۔
-          ”میں دراصل یہاں روز آتا ہوں۔ آپ ہی مجھے اٹینڈ کرتی ہیں‘ اس لیے میں نے سوچا کہ نام معلوم ہونا چاہیے۔ میرا نام ڈینئیل ایڈگر ہے۔“
-          اس نے شائستہ لہجے میں وضاحت کی۔ ڈینئیل کو اس کی آنکھوں میں عجیب سی الجھن نظر آئی۔
-          ”روز یہاں آتے ہیں؟“ سوالیہ لہجے میں کہا گیا یہ جملہ ڈینئیل کو حیران کر گیا تھا۔ وہ اس فاسٹ فوڈ چین میں تو بہت عرصے سے آ رہا تھا مگر باقاعدگی سے نہیں۔ کبھی کبھار وہ کسی دوسرے ریسٹورنٹ کی طرف بھی چلا جایا کرتا تھا مگر جب سے یہ لڑکی وہاں آئی تھی وہ باقاعدگی سے وہاں ایک ماہ سے جا رہا تھا اور وہ لڑکی اس سے کہہ رہی تھی۔
-          ”روز یہاں آتے ہیں؟“ اس کا خیال تھا وہ بھی اب تک اس کے چہرے سے شناسا ہو گئی ہو گی۔
-          ”ہاں میں روز یہاں آتا ہوں آپ ہی روز اٹینڈ کرتی ہیں مجھے...... اسی وقت.... کیا آپ کو یاد نہیں ہے؟“
-          ”نہیں مجھے یاد نہیں ہے۔“ وہ بے حس و حرکت ہو گیا۔ لڑکی کاؤنٹر کے پیچھے موجود دروازے سے غائب ہو چکی تھی۔ اسے کبھی اتنی خفت کا سامنا نہیں کرنا پڑا تھا۔
-          ”میں اتنا برا تو نہیں ہوں کہ میرا چہرہ یاد نہ رہ سکے۔ کیا یہ لڑکی جان بوجھ کر جھوٹ بول رہی ہے یا واقعی وہ میرے چہرے سے شناسا نہیں ہے۔“ وہ خود بھی الجھ گیا۔
-          وہ دس منٹ کے بعد دوبارہ نمودار ہوئی اور ٹرے لے کر اس کی طرف آئی۔ بل ادا کرتے ہوئے ڈینئیل نے پوچھا۔
-          ”میں نے آپ سے آپ کا نام پوچھا تھا؟“ وہ کچھ دیر بے تاثر آنکھوں سے اس کا چہرہ دیکھتی رہی\n113"""
-
           print(f"📚 کل {len(pages_map)} صفحات لوڈ ہو گئے۔")
 
-          # 2. جنرل کلینر (ٹیگز، نوٹس اور پچھلی ڈپلی کیشنز کی صفائی)
+          # 2. جنرل کلینر
           def general_clean(text):
               text = re.sub(r'\(\s*(?:Wait|Note|Let\'s|Correction)[^)]*\)', '', text, flags=re.IGNORECASE)
-              # کھلے یا بند بریکٹ ٹیگز جیسے [VERDICT_START یا [VERDICT_END] اور None ہٹانا
               text = re.sub(r'\[/?[A-Z_]{4,}\]?', '', text)
               text = re.sub(r'\n+None\s*$', '', text)
               # پچھلے اسکرپٹ سے ڈبل ہونے والے الفاظ کی صفائی
@@ -109,11 +97,21 @@ jobs:
               text = text.replace("باہر مت جانا (باہر مت جانا)", "باہر مت جانا")
               text = text.replace("’’مجھے...’’ ’’مجھے", "’’مجھے")
               text = text.replace("ہوتا تو\nتو کیا", "ہوتا تو\nکیا")
+              # بریکٹ اور کوٹس والے بقایا 4 فقروں کی درستگی
+              text = text.replace("ٹھیک ہے ۔ ٹھیک ہے یار!", "ٹھیک ہے یار!")
+              text = text.replace("اب تم بڑے ہو رہے ہو رہے ہو۔", "اب تم بڑے ہو رہے ہو۔")
+              text = text.replace("سعود نے اپنی فیملی کے ذریعے (دینے / یا باضابطہ) کا پروپوزل", "سعود نے اپنی فیملی کے ذریعے ایمان کا پروپوزل")
+              text = text.replace("”تم نہ۔۔۔“ اس کی بات پر ہنس پڑے۔", "ڈاکٹر خورشید اس کی بات پر ہنس پڑے۔")
               return text.strip()
 
-          # 3. corrections.txt کو پڑھنا (دونوں ترتیب: اصل پہلے یا فائل پہلے، اور ... والے جملے)
+          # اگر آخری صفحہ 155، صفحہ 154 کا ڈپلیکیٹ ہے تو اسے ہمیشہ کے لیے ہٹا دیں
+          if 154 in pages_map and 155 in pages_map:
+              if "ڈائننگ ٹیبل کے اوپر لٹکنے والا آرائشی لیمپ" in pages_map[155]:
+                  print("🗑️ ڈپلیکیٹ صفحہ 155 ہٹایا جا رہا ہے...")
+                  del pages_map[155]
+
+          # 3. corrections.txt کو پڑھنا
           def clean_extracted_phrase(s):
-              s = re.sub(r'\([^)]*\)', '', s).strip()
               s = re.sub(r'^[”"“\'\.\…۔\*]+|[”"“\'\.\…۔\*]+$', '', s).strip()
               return s.replace('**', '').replace('\\!', '!').replace('\\_', '_').strip()
 
@@ -125,7 +123,6 @@ jobs:
           page_rules = {}
 
           def add_rule(p_no, wrong_str, right_str):
-              # اگر جملے میں ... کے ذریعے مختلف ٹکڑے جڑے ہوں تو انہیں الگ الگ رول بنائیں
               w_parts = [p.strip() for p in re.split(r'\.{3,}|…+', wrong_str) if p.strip()]
               r_parts = [p.strip() for p in re.split(r'\.{3,}|…+', right_str) if p.strip()]
               if len(w_parts) == len(r_parts) and len(w_parts) > 1:
@@ -149,7 +146,6 @@ jobs:
                       pending_right = None
                       pending_wrong = None
 
-                  # اگر ایک ہی لائن میں تیر (leftarrow) ہو
                   if 'leftarrow' in ls and 'فائل میں:' in ls:
                       parts = re.split(r'\$?\\leftarrow\$?', ls)
                       if len(parts) == 2:
@@ -159,7 +155,6 @@ jobs:
                               add_rule(cur_page, w_s, r_s)
                       continue
 
-                  # فارمیٹ 1: اصل متن / اصل PDF اور فائل میں (کسی بھی ترتیب میں آئیں)
                   if ('اصل متن:' in ls or 'اصل PDF:' in ls):
                       key = 'اصل متن:' if 'اصل متن:' in ls else 'اصل PDF:'
                       pending_right = clean_extracted_phrase(ls.split(key, 1)[1])
@@ -175,7 +170,6 @@ jobs:
                           pending_wrong, pending_right = None, None
                       continue
 
-                  # فارمیٹ 2: مارک ڈاؤن ٹیبل
                   if ls.startswith('|') and ls.endswith('|'):
                       cols = [c.strip() for c in ls.strip('|').split('|')]
                       if len(cols) >= 3:
@@ -187,18 +181,17 @@ jobs:
                               add_rule(p_no, w_str, r_str)
 
           def flex_replace(text, wrong, right):
-              # اگر درست جملہ پہلے ہی موجود ہے تو دوبارہ ریپلیس نہ کریں (ڈپلیکیشن سے بچاؤ)
               if right in text and wrong not in text.replace(right, ""):
                   return text, True
               if wrong in text:
                   return text.replace(wrong, right, 1), True
               pat = re.escape(wrong)
-              pat = re.sub(r'(\\\.|۔|‘|’|،)+', r'[\\.۔…‘’،\\s]+', pat)
+              pat = re.sub(r'(\\\.|۔|‘|’|،|”|“)+', r'[\\.۔…‘’،”"“\\s]+', pat)
               pat = re.sub(r'\\ ', r'\\s+', pat)
               new_t, count = re.subn(pat, right, text, count=1)
               return new_t, (count > 0)
 
-          # 4. صفحات پر قوانین لاگو کرنا (صرف متعلقہ صفحے یا قریبی +/-1 صفحے پر، پوری کتاب پر دوبارہ نہیں!)
+          # 4. صفحات پر قوانین لاگو کرنا
           unresolved_pages = set()
           fixed_count = 0
 
@@ -208,12 +201,11 @@ jobs:
           for p_no, rules in page_rules.items():
               for w_s, r_s in rules:
                   applied = False
-                  # پہلے اصل صفحہ چیک کریں، نہ ملے تو +1 یا -1 صفحہ چیک کریں
                   for target_p in [p_no, p_no + 1, p_no - 1]:
                       if target_p in pages_map:
                           new_txt, ok = flex_replace(pages_map[target_p], w_s, r_s)
                           if ok:
-                              pages_map[target_p] = new_txt
+                              pages_map[target_p] = general_clean(new_txt)
                               fixed_count += 1
                               applied = True
                               break
@@ -246,7 +238,12 @@ jobs:
                   except Exception as e:
                       print(f"AI skip page {p_no}: {e}")
 
-          # 6. تمام فائلوں کو اپڈیٹ کرنا
+          # 6. پرانے فولڈرز صاف کر کے تمام فائلوں کو نئے سرے سے محفوظ کرنا (تاکہ ڈپلیکیٹ صفحہ 155 باقی نہ رہے)
+          shutil.rmtree(PAGES_TXT_DIR, ignore_errors=True)
+          shutil.rmtree(PAGES_JSON_DIR, ignore_errors=True)
+          os.makedirs(PAGES_TXT_DIR, exist_ok=True)
+          os.makedirs(PAGES_JSON_DIR, exist_ok=True)
+
           full_book_list = []
           for p_no in sorted(pages_map.keys()):
               content = pages_map[p_no]
@@ -264,7 +261,7 @@ jobs:
                   json.dump(full_book_list, out_f, ensure_ascii=False, indent=2)
               print(f"✅ Updated Book JSON: {tj}")
 
-          print(f"🎉 کل {fixed_count} تصحیحات کامیابی سے لاگو ہو گئیں!")
+          print(f"🎉 کل {fixed_count} تصحیحات کامیابی سے لاگو ہو گئیں! کل صفحات: {len(full_book_list)}")
           EOF
 
       - name: Commit and Push Changes
@@ -272,4 +269,4 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || (git commit -m "Auto-update: Applied corrections from corrections.txt" && git push)
+          git diff --staged --quiet || (git commit -m "Auto-update: Applied final corrections and removed duplicate page 155" && git push)
