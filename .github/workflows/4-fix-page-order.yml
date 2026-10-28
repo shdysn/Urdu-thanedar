@@ -1,0 +1,85 @@
+name: 4 - Fix Page Order
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reorder_pages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fix Page Numbering & Shifting
+        run: |
+          python - << 'EOF'
+          import os, json, shutil
+
+          OUTPUT_DIR = "output"
+          FULL_JSON_PATH = os.path.join(OUTPUT_DIR, "full_book.json")
+          PAGES_TXT_DIR = os.path.join(OUTPUT_DIR, "pages_txt")
+          PAGES_JSON_DIR = os.path.join(OUTPUT_DIR, "pages_json")
+
+          if not os.path.exists(FULL_JSON_PATH):
+              print(f"❌ {FULL_JSON_PATH} نہیں ملی!")
+              exit(1)
+
+          with open(FULL_JSON_PATH, "r", encoding="utf-8") as f:
+              pages = json.load(f)
+
+          # صفحات کو نمبر کے لحاظ سے ترتیب دیں
+          pages.sort(key=lambda x: x["page"])
+
+          # چیک کریں کہ کیا صفحہ 61 پر "کیرولین / چاکلیٹ" والی تحریر ہے؟
+          page_61_idx = next((i for i, p in enumerate(pages) if p["page"] == 61), None)
+
+          if page_61_idx is not None and "چاکلیٹ" in pages[page_61_idx].get("content", ""):
+              print("✅ غلط صفحہ 61 مل گیا ہے۔ اسے ڈیلیٹ کر کے باقی صفحات کی ترتیب ٹھیک کی جا رہی ہے...")
+              
+              # غلط صفحے کو ڈیلیٹ کریں
+              del pages[page_61_idx]
+              
+              # صفحہ 62 اور اس سے آگے کے تمام صفحات کا نمبر 1 کم کر دیں
+              for p in pages:
+                  if p["page"] >= 62:
+                      p["page"] -= 1
+
+              # اپڈیٹ شدہ ڈیٹا کو واپس full_book.json میں محفوظ کریں
+              with open(FULL_JSON_PATH, "w", encoding="utf-8") as f:
+                  json.dump(pages, f, ensure_ascii=False, indent=2)
+                  
+              # پرانے فولڈرز ڈیلیٹ کر کے نئے سرے سے درست نمبرنگ کے ساتھ بنائیں
+              shutil.rmtree(PAGES_TXT_DIR, ignore_errors=True)
+              shutil.rmtree(PAGES_JSON_DIR, ignore_errors=True)
+              os.makedirs(PAGES_TXT_DIR, exist_ok=True)
+              os.makedirs(PAGES_JSON_DIR, exist_ok=True)
+              
+              for p in pages:
+                  p_no = p["page"]
+                  content = p["content"]
+                  # TXT فائلیں بنائیں
+                  with open(os.path.join(PAGES_TXT_DIR, f"page_{p_no:04d}.txt"), "w", encoding="utf-8") as tf:
+                      tf.write(content)
+                  # JSON فائلیں بنائیں
+                  with open(os.path.join(PAGES_JSON_DIR, f"page_{p_no:04d}.json"), "w", encoding="utf-8") as jf:
+                      json.dump(p, jf, ensure_ascii=False, indent=2)
+                      
+              print("🎉 صفحات کی ترتیب 100% درست ہو گئی ہے!")
+          else:
+              print("⚠️ صفحہ 61 کا مسئلہ نہیں ملا یا پہلے ہی ٹھیک ہو چکا ہے۔")
+          EOF
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/
+          git diff --staged --quiet || (git commit -m "Auto-fix: Corrected page shift issue starting from page 61" && git push)
