@@ -1,0 +1,108 @@
+name: 2 - Build Full Book JSON & TXT
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["1 - Page Wise Digitizer"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  combine_book:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Combine All Pages into Single JSON and Page-wise TXT
+        run: |
+          python - << 'EOF'
+          import os, re, glob, json
+
+          OUTPUT_DIR = "output"
+          TXT_OUT_DIR = os.path.join(OUTPUT_DIR, "pages_txt")
+          FULL_JSON_PATH = os.path.join(OUTPUT_DIR, "full_book.json")
+
+          os.makedirs(TXT_OUT_DIR, exist_ok=True)
+          pages_map = {}
+
+          # 1. پہلے output کے اندر موجود تمام الگ الگ JSON فائلوں کو چیک کریں
+          json_files = glob.glob(os.path.join(OUTPUT_DIR, "**", "*.json"), recursive=True)
+          for jf_path in sorted(json_files):
+              if os.path.abspath(jf_path) == os.path.abspath(FULL_JSON_PATH):
+                  continue
+              try:
+                  with open(jf_path, "r", encoding="utf-8") as f:
+                      data = json.load(f)
+                  # اگر فائل کے اندر لسٹ ہے
+                  if isinstance(data, list):
+                      for item in data:
+                          if isinstance(item, dict) and "page" in item and "content" in item:
+                              pages_map[int(item["page"])] = str(item["content"]).strip()
+                  # اگر فائل کے اندر ایک صفحے کا ڈکشنری آبجیکٹ ہے
+                  elif isinstance(data, dict):
+                      p_num = data.get("page")
+                      if p_num is None:
+                          nums = re.findall(r'\d+', os.path.basename(jf_path))
+                          p_num = int(nums[-1]) if nums else None
+                      content = data.get("content") or data.get("text") or ""
+                      if p_num is not None and content.strip():
+                          pages_map[int(p_num)] = content.strip()
+              except Exception as e:
+                  print(f"Skipping {jf_path}: {e}")
+
+          # 2. پھر output کے اندر موجود تمام TXT فائلوں کو بھی چیک کریں
+          txt_files = glob.glob(os.path.join(OUTPUT_DIR, "**", "*.txt"), recursive=True)
+          for tf_path in sorted(txt_files):
+              nums = re.findall(r'\d+', os.path.basename(tf_path))
+              if not nums:
+                  continue
+              p_num = int(nums[-1])
+              try:
+                  with open(tf_path, "r", encoding="utf-8") as f:
+                      content = f.read().strip()
+                  if content and p_num not in pages_map:
+                      pages_map[p_num] = content
+              except Exception as e:
+                  print(f"Skipping {tf_path}: {e}")
+
+          if not pages_map:
+              print("کوئی صفحہ نہیں ملا!")
+              exit(0)
+
+          # 3. تمام صفحات کو نمبر وار ترتیب دے کر سنگل full_book.json اور پیج وائز TXT بنانا
+          full_book_list = []
+          for p_num in sorted(pages_map.keys()):
+              content = pages_map[p_num]
+              full_book_list.append({
+                  "page": p_num,
+                  "content": content
+              })
+              # ہر صفحے کی الگ TXT فائل بھی یقینی بنائیں
+              txt_file = os.path.join(TXT_OUT_DIR, f"page_{p_num:04d}.txt")
+              if not os.path.exists(txt_file):
+                  with open(txt_file, "w", encoding="utf-8") as tf:
+                      tf.write(content)
+
+          with open(FULL_JSON_PATH, "w", encoding="utf-8") as out_f:
+              json.dump(full_book_list, out_f, ensure_ascii=False, indent=2)
+
+          print(f"Done! Created {FULL_JSON_PATH} with {len(full_book_list)} pages.")
+          EOF
+
+      - name: Commit and Push Full Book
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/
+          git diff --staged --quiet || git commit -m "Build single full_book.json and page-wise TXT"
+          git push
