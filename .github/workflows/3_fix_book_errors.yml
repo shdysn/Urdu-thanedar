@@ -1,0 +1,29 @@
+name: 3 - Fix Book Errors from Report
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'corrections.txt'
+
+jobs:
+  fix_errors:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Fix errors
+        run: |
+          python fix_errors.py
+      - name: Commit changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-fix book errors from corrections.txt [skip ci]"
+          git push

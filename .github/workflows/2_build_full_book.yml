@@ -1,0 +1,33 @@
+name: 2 - Build Full Book JSON & TXT
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["1 - Page Wise Digitizer"]
+    types:
+      - completed
+
+jobs:
+  build_book:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      - name: Build Full Book JSON
+        run: |
+          python digitizer.py
+      - name: Commit changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add output/full_book.json output/pages_json/ || true
+          git diff --quiet && git diff --staged --quiet || git commit -m "Build full book JSON [skip ci]"
+          git push
