@@ -30,11 +30,13 @@ strict_config = types.GenerateContentConfig(
     temperature=0.0
 )
 
+import re
+
 # 1. Munshi
 def run_munshi(pil_image):
     prompt = """Transcribe all Urdu Nastaliq text verbatim. Output ONLY the raw Urdu text."""
     response = client_munshi.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         contents=[pil_image, prompt],
         config=strict_config
     )
@@ -51,7 +53,7 @@ TASK:
 Compare against image closely. Challenge any missed letters, substituted words (e.g. confusing 'میس' with 'کچن', or 'حبس' with 'جس'), or dropped prepositions.
 State your objections clearly."""
     response = client_inspector.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         contents=[pil_image, prompt],
         config=strict_config
     )
@@ -79,22 +81,41 @@ OUTPUT FORMAT (STRICT):
 [DOUBTS_END]"""
 
     response = client_thanedar.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         contents=[pil_image, prompt],
         config=strict_config
     )
     
     full_output = response.text.strip() if response and hasattr(response, 'text') and response.text else ""
     
-    final_text = full_output
-    if "[VERDICT_START]" in full_output and "[VERDICT_END]" in full_output:
-        final_text = full_output.split("[VERDICT_START]")[1].split("[VERDICT_END]")[0].strip()
+    # Safe regex parsing to extract text blocks even if brackets are malformed
+    verdict_match = re.search(r'\[VERDICT_START\](.*?)(?:\[VERDICT_END\]|$)', full_output, re.DOTALL | re.IGNORECASE)
+    if verdict_match:
+        final_text = verdict_match.group(1).strip()
+    else:
+        final_text = full_output
+
+    doubts_match = re.search(r'\[DOUBTS_START\](.*?)(?:\[DOUBTS_END\]|$)', full_output, re.DOTALL | re.IGNORECASE)
+    if doubts_match:
+        doubts = doubts_match.group(1).strip()
+    else:
+        doubts = "None"
         
-    doubts = "None"
-    if "[DOUBTS_START]" in full_output and "[DOUBTS_END]" in full_output:
-        doubts = full_output.split("[DOUBTS_START]")[1].split("[DOUBTS_END]")[0].strip()
-        
-    return final_text, doubts
+    # Strictly enforce pure Urdu Nastaliq (Perso-Arabic) script
+    # Strip Devanagari/Hindi characters
+    final_text = re.sub(r'[\u0900-\u097F]+', '', final_text)
+
+    # Strip common English meta-comments (e.g. "(Wait, let's keep...)")
+    final_text = re.sub(r'\([a-zA-Z\s,.\']+\)', '', final_text)
+
+    # Strip any stray unclosed tags like [VERDICT_START
+    final_text = re.sub(r'\[\w+.*?$', '', final_text, flags=re.MULTILINE)
+    final_text = re.sub(r'\[VERDICT_START.*?$', '', final_text, flags=re.MULTILINE | re.IGNORECASE)
+    final_text = re.sub(r'\[VERDICT_END.*?$', '', final_text, flags=re.MULTILINE | re.IGNORECASE)
+    final_text = re.sub(r'\[DOUBTS_START.*?$', '', final_text, flags=re.MULTILINE | re.IGNORECASE)
+    final_text = re.sub(r'\[DOUBTS_END.*?$', '', final_text, flags=re.MULTILINE | re.IGNORECASE)
+
+    return final_text.strip(), doubts
 
 def run_multi_agent_pipeline(pil_image):
     draft = run_munshi(pil_image)
