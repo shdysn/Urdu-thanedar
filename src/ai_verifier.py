@@ -34,11 +34,11 @@ strict_config = types.GenerateContentConfig(
 def run_munshi(pil_image):
     prompt = """Transcribe all Urdu Nastaliq text verbatim. Output ONLY the raw Urdu text."""
     response = client_munshi.models.generate_content(
-        model="gemini-3.5-flash-lite",
+        model="gemini-1.5-flash",
         contents=[pil_image, prompt],
         config=strict_config
     )
-    return response.text.strip()
+    return response.text.strip() if response and hasattr(response, 'text') and response.text else ""
 
 # 2. Inspector Debate
 def run_inspector_debate(pil_image, munshi_draft):
@@ -51,11 +51,11 @@ TASK:
 Compare against image closely. Challenge any missed letters, substituted words (e.g. confusing 'میس' with 'کچن', or 'حبس' with 'جس'), or dropped prepositions.
 State your objections clearly."""
     response = client_inspector.models.generate_content(
-        model="gemini-3.5-flash-lite",
+        model="gemini-1.5-flash",
         contents=[pil_image, prompt],
         config=strict_config
     )
-    return response.text.strip()
+    return response.text.strip() if response and hasattr(response, 'text') and response.text else ""
 
 # 3. Thanedar Supreme Verdict + Doubt Logger
 def run_thanedar_ruling(pil_image, munshi_draft, inspector_objections):
@@ -79,12 +79,12 @@ OUTPUT FORMAT (STRICT):
 [DOUBTS_END]"""
 
     response = client_thanedar.models.generate_content(
-        model="gemini-3.5-flash-lite",
+        model="gemini-1.5-flash",
         contents=[pil_image, prompt],
         config=strict_config
     )
     
-    full_output = response.text.strip()
+    full_output = response.text.strip() if response and hasattr(response, 'text') and response.text else ""
     
     final_text = full_output
     if "[VERDICT_START]" in full_output and "[VERDICT_END]" in full_output:
