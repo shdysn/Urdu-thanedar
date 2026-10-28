@@ -1,0 +1,211 @@
+name: 3 - Fix Book Errors from Report
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'corrections.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  apply_corrections:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Parse Corrections & Update JSON/TXT Files
+        run: |
+          python - << 'EOF'
+          import os, re, glob, json
+
+          OUTPUT_DIR = "output"
+          FULL_JSON_PATH = os.path.join(OUTPUT_DIR, "full_book.json")
+          TXT_OUT_DIR = os.path.join(OUTPUT_DIR, "pages_txt")
+          JSON_OUT_DIR = os.path.join(OUTPUT_DIR, "pages_json")
+          CORRECTIONS_FILE = "corrections.txt"
+
+          os.makedirs(TXT_OUT_DIR, exist_ok=True)
+          os.makedirs(JSON_OUT_DIR, exist_ok=True)
+
+          # 1. ہندی الفاظ جو پوری کتاب میں جہاں بھی آئیں خودکار طور پر اردو میں بدل جائیں
+          GLOBAL_HINDI_MAP = {
+              "मुझे याद": "مجھے یاد",
+              "मुझे": "مجھے",
+              "गया": "گیا",
+              "मत जाना": "مت جانا",
+              "मत कहو": "مت کہو",
+              "मत कहो": "مت کہو",
+              "इसी": "اسی",
+              "پڑता": "پڑتا",
+              "ता": "تا",
+          }
+
+          def clean_ai_and_hindi_artifacts(text):
+              # (Wait, let's keep it strictly Urdu script: ...) جیسے نوٹس ہٹانا
+              text = re.sub(r'\(\s*Wait,\s*let\'s\s*keep[^)]*\)', '', text, flags=re.IGNORECASE)
+              # [VERDICT_START] اور [VERDICT_END] جیسے ٹیگز ہٹانا
+              text = re.sub(r'\[/?VERDICT[A-Z_]*\]', '', text, flags=re.IGNORECASE)
+              # عام ہندی الفاظ کو درست اردو میں بدلنا
+              for h_word, u_word in GLOBAL_HINDI_MAP.items():
+                  text = text.replace(h_word, u_word)
+              # اگر کوئی اور دیوناگری (ہندی) حروف بچ گئے ہوں تو انہیں صاف کرنا
+              text = re.sub(r'[\u0900-\u097F]+', '', text)
+              # فالتو خالی اسپیس کو ٹھیک کرنا
+              text = re.sub(r'[ \t]{2,}', ' ', text)
+              return text.strip()
+
+          def clean_quote_str(s):
+              s = s.strip()
+              # حاشیے میں لکھے تبصرے جیسے (لفظ نہیں غائب...) ہٹانا
+              s = re.sub(r'\((?:لفظ|جہاں زیب|تین چار بار)[^)]*\)', '', s).strip()
+              # دونوں طرف کے کوٹیشن مارکس اور ڈاٹس ہٹانا
+              s = re.sub(r'^[”"“\'\.\…]+|[”"“\'\.\…]+$', '', s).strip()
+              # مارک ڈاؤن کے ** اور \_ ہٹانا
+              s = s.replace('**', '').replace('\\!', '!').replace('\\_', '_')
+              return s.strip()
+
+          # 2. corrections.txt فائل کو پڑھ کر غلط اور درست جملوں کی لسٹ بنانا
+          page_fixes = {} # {page_num: [(wrong, right), ...]}
+
+          if os.path.exists(CORRECTIONS_FILE):
+              with open(CORRECTIONS_FILE, "r", encoding="utf-8") as cf:
+                  lines = cf.readlines()
+
+              current_page = None
+              temp_right = None
+              temp_wrong = None
+
+              for line in lines:
+                  line_s = line.strip()
+
+                  # (الف) بلٹ پوائنٹ میں صفحہ نمبر تلاش کرنا: "- صفحہ 83 (اصل صفحہ 82):"
+                  m_page = re.search(r'صفحہ\s*(\d+)', line_s)
+                  if m_page and ('اصل صفحہ' in line_s or line_s.startswith('-') and ':' in line_s):
+                      current_page = int(m_page.group(1))
+                      temp_right = None
+                      temp_wrong = None
+                      continue
+
+                  # "اصل متن:" تلاش کرنا
+                  if 'اصل متن:' in line_s:
+                      temp_right = clean_quote_str(line_s.split('اصل متن:', 1)[1])
+                      continue
+
+                  # "فائل میں:" تلاش کرنا
+                  if 'فائل میں:' in line_s:
+                      temp_wrong = clean_quote_str(line_s.split('فائل میں:', 1)[1])
+                      if current_page and temp_wrong and temp_right:
+                          page_fixes.setdefault(current_page, []).append((temp_wrong, temp_right))
+                      temp_right = None
+                      temp_wrong = None
+                      continue
+
+                  # (ب) مارک ڈاؤن ٹیبل کی لائن پڑھنا: | **4** | غلط متن | درست متن |
+                  if line_s.startswith('|') and line_s.endswith('|'):
+                      cols = [c.strip() for c in line_s.strip('|').split('|')]
+                      if len(cols) >= 3:
+                          p_match = re.search(r'(\d+)', cols[0])
+                          if p_match:
+                              p_num = int(p_match.group(1))
+                              w_txt = clean_quote_str(cols[1])
+                              r_txt = clean_quote_str(cols[2])
+                              # رینومبرنگ ٹیبل (ریش rash) جیسے انگریزی بریکٹ الفاظ ہٹانا اگر ضرورت ہو
+                              r_txt = re.sub(r'\s*\([a-zA-Z]+\)', '', r_txt)
+                              if w_txt and r_txt:
+                                  page_fixes.setdefault(p_num, []).append((w_txt, r_txt))
+
+          print(f"Loaded corrections for {len(page_fixes)} pages from {CORRECTIONS_FILE}.")
+
+          # 3. پہلے سے موجود صفحات لوڈ کرنا (full_book.json یا الگ الگ فائلوں سے)
+          pages_map = {}
+
+          if os.path.exists(FULL_JSON_PATH):
+              with open(FULL_JSON_PATH, "r", encoding="utf-8") as f:
+                  data = json.load(f)
+                  for item in data:
+                      pages_map[int(item["page"])] = item["content"]
+
+          for jf in glob.glob(os.path.join(OUTPUT_DIR, "**", "*.json"), recursive=True):
+              if os.path.abspath(jf) == os.path.abspath(FULL_JSON_PATH):
+                  continue
+              try:
+                  with open(jf, "r", encoding="utf-8") as f:
+                      d = json.load(f)
+                  if isinstance(d, dict) and "page" in d and "content" in d:
+                      pages_map[int(d["page"])] = d["content"]
+              except Exception:
+                  pass
+
+          for tf in glob.glob(os.path.join(OUTPUT_DIR, "**", "*.txt"), recursive=True):
+              nums = re.findall(r'\d+', os.path.basename(tf))
+              if nums:
+                  p_no = int(nums[-1])
+                  if p_no not in pages_map:
+                      with open(tf, "r", encoding="utf-8") as f:
+                          pages_map[p_no] = f.read()
+
+          if not pages_map:
+              print("No book pages found in output/ folder!")
+              exit(0)
+
+          # 4. ہر صفحے پر تصحیح (Corrections) اور صفائی لاگو کرنا
+          total_replacements = 0
+          for p_num in sorted(pages_map.keys()):
+              text = pages_map[p_num]
+
+              # اس صفحے کی مخصوص غلطیاں ٹھیک کرنا
+              if p_num in page_fixes:
+                  for wrong_str, right_str in page_fixes[p_num]:
+                      if wrong_str in text:
+                          text = text.replace(wrong_str, right_str)
+                          total_replacements += 1
+                      else:
+                          # اگر نقطوں یا کوماز کا معمولی فرق ہو تو لچکدار میچنگ
+                          w_core = re.sub(r'[۔،\.\…\"”«»]', '', wrong_str).strip()
+                          if w_core and w_core in text:
+                              text = text.replace(w_core, right_str)
+                              total_replacements += 1
+
+              # ہندی الفاظ اور AI نوٹس صاف کرنا
+              text = clean_ai_and_hindi_artifacts(text)
+              pages_map[p_num] = text
+
+          # 5. اپڈیٹ شدہ ڈیٹا کو واپس ہر صفحے کی JSON، TXT اور مکمل full_book.json میں سیو کرنا
+          full_book_list = []
+          for p_num in sorted(pages_map.keys()):
+              content = pages_map[p_num]
+              full_book_list.append({"page": p_num, "content": content})
+
+              # انفرادی TXT اپڈیٹ کریں
+              with open(os.path.join(TXT_OUT_DIR, f"page_{p_num:04d}.txt"), "w", encoding="utf-8") as tf:
+                  tf.write(content)
+
+              # انفرادی JSON اپڈیٹ کریں
+              with open(os.path.join(JSON_OUT_DIR, f"page_{p_num:04d}.json"), "w", encoding="utf-8") as jf:
+                  json.dump({"page": p_num, "content": content}, jf, ensure_ascii=False, indent=2)
+
+          # مکمل کتاب کی سنگل JSON اپڈیٹ کریں
+          with open(FULL_JSON_PATH, "w", encoding="utf-8") as out_f:
+              json.dump(full_book_list, out_f, ensure_ascii=False, indent=2)
+
+          print(f"✅ کامیابی! کل {total_replacements} مخصوص غلطیاں اور تمام ہندی الفاظ/ٹیگز درست کر کے full_book.json اپڈیٹ کر دی گئی ہے۔")
+          EOF
+
+      - name: Commit and Push Corrected Book
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/
+          git diff --staged --quiet || git commit -m "Auto-fix errors from corrections.txt and update full_book.json"
+          git push
