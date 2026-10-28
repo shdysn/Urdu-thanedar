@@ -7,6 +7,7 @@ import time
 import fitz  # PyMuPDF
 from google import genai
 from PIL import Image
+from src.pdf_utils import remove_red_watermark
 
 INPUT_DIR = "input"
 OUTPUT_DIR = "output"
@@ -30,7 +31,7 @@ def ocr_single_image(client, img):
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash", contents=[img, PROMPT]
+                model="gemini-1.5-flash", contents=[img, PROMPT]
             )
             if response and response.text:
                 return response.text.strip()
@@ -52,19 +53,21 @@ def process_inputs():
     client = genai.Client(api_key=api_key)
 
     pdf_files = glob.glob(os.path.join(INPUT_DIR, "*.pdf")) + glob.glob("*.pdf")
+    global_page_num = 0
     for pdf_path in pdf_files:
         print(f"Processing PDF: {pdf_path}")
         doc = fitz.open(pdf_path)
         for idx in range(len(doc)):
-            page_num = idx + 1
-            txt_path = os.path.join(TXT_DIR, f"page_{page_num:04d}.txt")
+            global_page_num += 1
+            txt_path = os.path.join(TXT_DIR, f"page_{global_page_num:04d}.txt")
             if os.path.exists(txt_path):
                 continue
 
-            print(f"OCR Page {page_num}...")
+            print(f"OCR Page {global_page_num}...")
             page = doc.load_page(idx)
             pix = page.get_pixmap(dpi=200)
             img = Image.open(io.BytesIO(pix.tobytes("png")))
+            img = remove_red_watermark(img)
 
             text = ocr_single_image(client, img)
             if text:
